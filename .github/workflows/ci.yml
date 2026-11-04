@@ -20,140 +20,147 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: 'ubuntu-22.04'
-            glog_version: '0.7.1'
-            colmap_version: '3.9.1'
-            ceres_solver_version: '2.1.0'
-            cuda_version: '12.5'
-            cuda_arch: '75;80;89'  # Supported GPUs: T4, A100, L4
-            libtorch_url: 'https://download.pytorch.org/libtorch/cu124/libtorch-cxx11-abi-shared-with-deps-2.6.0%2Bcu124.zip'
+          # Keep in sync with the Google Colab GPU runtime:
+          # https://github.com/googlecolab/backend-info
+          - os: 'ubuntu-24.04'
+            colmap_version: '4.2.1'
+            cuda_version: '13.0'
+            # T4 (7.5), A100 (8.0), L4 (8.9), H100 (9.0), RTX PRO 6000 / G4 (12.0)
+            cuda_arch: '75;80;89;90;120'
+            torch_version: '2.11.0'
+            torch_cuda: 'cu130'
 
     env:
       INSTALL_PREFIX: '${{ github.workspace }}/colmap'
+      CUDA_HOME: '/usr/local/cuda'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
       - name: Export environment variables
         run: |
-          echo "PATH=${{ env.INSTALL_PREFIX }}/bin:/usr/local/cuda/bin:$PATH" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${{ env.INSTALL_PREFIX }}/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-
-      - name: Install build dependencies (base)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential \
-                                  cmake \
-                                  ninja-build \
-                                  git
-
-      - name: Download glog source code
-        run: |
-          wget -q --content-disposition https://github.com/google/glog/archive/refs/tags/v${{ matrix.glog_version }}.tar.gz
-          tar xf glog-${{ matrix.glog_version }}.tar.gz
-
-      - name: Build and install glog
-        run: |
-          cd glog-${{ matrix.glog_version }}
-          cmake -S . -B build -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_PREFIX }}
-          cmake --build build
-          cmake --build build --target install
-
-      - name: Install build dependencies (Ceres Solver)
-        run: |
-          sudo apt-get -y install libgflags-dev \
-                                  libatlas-base-dev \
-                                  libeigen3-dev \
-                                  libsuitesparse-dev
+          echo "PATH=${{ env.INSTALL_PREFIX }}/bin:${{ env.CUDA_HOME }}/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=${{ env.INSTALL_PREFIX }}/lib:${{ env.CUDA_HOME }}/lib64:${{ github.workspace }}/libtorch/lib:${LD_LIBRARY_PATH:-}" >> $GITHUB_ENV
 
       - name: Install CUDA Toolkit
         run: |
           CUDA_VERSION_DASH=$(echo "${{ matrix.cuda_version }}" | sed 's/\./-/')
-          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get -y install cuda-toolkit-${CUDA_VERSION_DASH}
+          nvcc --version
 
-      - name: Download Ceres Solver source code
+      - name: Install build dependencies
         run: |
-          wget -q http://ceres-solver.org/ceres-solver-${{ matrix.ceres_solver_version }}.tar.gz
-          tar xf ceres-solver-${{ matrix.ceres_solver_version }}.tar.gz
-
-      - name: Build and install Ceres Solver
-        run: |
-          mkdir ${{ github.workspace }}/install_dir
-          cd ceres-solver-${{ matrix.ceres_solver_version }}
-
-          mkdir build
-          cd build
-          cmake .. -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_PREFIX }} \
-                    -DCMAKE_CUDA_ARCHITECTURES="${{ matrix.cuda_arch }}" \
-                    -DBUILD_TESTING=OFF \
-                    -DBUILD_EXAMPLES=OFF
-          make -j$(nproc)
-          make install
-
-      - name: Install build dependencies (COLMAP)
-        run: |
-          sudo apt-get install libboost-program-options-dev \
-                               libboost-filesystem-dev \
-                               libboost-graph-dev \
-                               libboost-system-dev \
-                               libeigen3-dev \
-                               libflann-dev \
-                               libfreeimage-dev \
-                               libmetis-dev \
-                               libgtest-dev \
-                               libsqlite3-dev \
-                               libglew-dev \
-                               qtbase5-dev \
-                               libqt5opengl5-dev \
-                               libcgal-dev \
+          sudo apt-get install -y build-essential \
+                                  cmake \
+                                  ninja-build \
+                                  git \
+                                  wget \
+                                  unzip \
+                                  libboost-program-options-dev \
+                                  libboost-graph-dev \
+                                  libboost-system-dev \
+                                  libeigen3-dev \
+                                  libopenimageio-dev \
+                                  libmetis-dev \
+                                  libgoogle-glog-dev \
+                                  libgflags-dev \
+                                  libsqlite3-dev \
+                                  libglew-dev \
+                                  libcgal-dev \
+                                  libceres-dev \
+                                  libsuitesparse-dev \
+                                  libcurl4-openssl-dev \
+                                  libssl-dev \
+                                  libopencv-dev
+          # Ubuntu's OpenImageIO CMake config expects this directory to exist
+          sudo mkdir -p /usr/include/opencv4
 
       - name: Download COLMAP source code
         run: |
           wget -q --content-disposition https://github.com/colmap/colmap/archive/refs/tags/${{ matrix.colmap_version }}.tar.gz
           tar xf colmap-${{ matrix.colmap_version }}.tar.gz
-      
+
       - name: Build and install COLMAP
         run: |
           cd colmap-${{ matrix.colmap_version }}
-          mkdir build
-          cd build
-          cmake .. -GNinja \
-                    -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_PREFIX }} \
-                    -DCMAKE_CUDA_ARCHITECTURES="${{ matrix.cuda_arch }}"
-          ninja
-          ninja install
+          cmake -S . -B build -GNinja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=${{ env.INSTALL_PREFIX }} \
+                -DCMAKE_CUDA_ARCHITECTURES="${{ matrix.cuda_arch }}" \
+                -DCUDA_ENABLED=ON \
+                -DGUI_ENABLED=OFF \
+                -DONNX_ENABLED=OFF \
+                -DTESTS_ENABLED=OFF
+          cmake --build build
+          cmake --install build
 
       - name: Test COLMAP
         run: colmap -h
 
-      - name: Install build dependencies (OpenSplat)
-        run: sudo apt-get install libopencv-dev
-
       - name: Clone OpenSplat repository
-        run: |
-          git clone https://github.com/pierotofy/OpenSplat
+        run: git clone --depth 1 https://github.com/WebODM/OpenSplat
 
       - name: Download libtorch
         run: |
-          wget -q ${{ matrix.libtorch_url }} -O libtorch.zip
+          wget -q https://download.pytorch.org/libtorch/${{ matrix.torch_cuda }}/libtorch-shared-with-deps-${{ matrix.torch_version }}%2B${{ matrix.torch_cuda }}.zip -O libtorch.zip
           unzip -q libtorch.zip
-          rm -rf libtorch.zip
+          rm -f libtorch.zip
 
       - name: Build OpenSplat
         run: |
           cd OpenSplat
-          mkdir -p build
-          cd build
-          cmake .. -DCMAKE_PREFIX_PATH=${{ github.workspace }}/libtorch \
-                    -DCMAKE_CUDA_ARCHITECTURES="${{ matrix.cuda_arch }}"
-          make -j$(nproc)
+          cmake -S . -B build -GNinja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_PREFIX_PATH=${{ github.workspace }}/libtorch \
+                -DCMAKE_CUDA_ARCHITECTURES="${{ matrix.cuda_arch }}"
+          cmake --build build
 
-      - name: Package runtime dependencies
-        run: tar czf colmap-${{ matrix.colmap_version }}-${{ matrix.os }}.tar.gz -C ${{ env.INSTALL_PREFIX }} .
+      - name: Collect runtime dependencies
+        run: |
+          # List the Ubuntu packages that provide the shared libraries needed by
+          # colmap and opensplat. CUDA and libtorch libraries are excluded since
+          # they are already provided by the Colab runtime (or by install.sh).
+          # libcuda.so.1 comes from the NVIDIA driver, which the runner lacks.
+          missing=$( (ldd ${{ env.INSTALL_PREFIX }}/bin/colmap; ldd OpenSplat/build/opensplat) | grep "not found" | grep -v "libcuda.so" || true)
+          if [[ -n "$missing" ]]; then
+              echo "Unresolved shared libraries:"; echo "$missing"; exit 1
+          fi
+          (ldd ${{ env.INSTALL_PREFIX }}/bin/colmap; ldd OpenSplat/build/opensplat) \
+            | awk '/=> \// {print $3}' \
+            | grep -vE "^(${{ env.INSTALL_PREFIX }}|${{ github.workspace }}/libtorch|/usr/local/cuda)" \
+            | sort -u \
+            | while read -r lib; do
+                # Try the path as-is, resolved, and without /usr (usrmerge)
+                real=$(realpath "$lib")
+                dpkg -S "$lib" 2>/dev/null || dpkg -S "$real" 2>/dev/null || dpkg -S "${real#/usr}" 2>/dev/null || true
+              done \
+            | cut -d: -f1 \
+            | grep -vE '^(libc6|libgcc-s1|libstdc\+\+6|cuda-|libcu|libnv|libnpp)' \
+            | sort -u > runtime-deps.txt
+          cat runtime-deps.txt
+
+      - name: Package binaries
+        run: |
+          tar czf colmap-ubuntu-24.04.tar.gz -C ${{ env.INSTALL_PREFIX }} .
+          cp OpenSplat/build/opensplat opensplat
+          cat > versions.txt << EOF
+          ubuntu=24.04
+          cuda=${{ matrix.cuda_version }}
+          cuda_arch=${{ matrix.cuda_arch }}
+          colmap=${{ matrix.colmap_version }}
+          opensplat=$(cat OpenSplat/VERSION) ($(git -C OpenSplat rev-parse --short HEAD))
+          torch=${{ matrix.torch_version }}+${{ matrix.torch_cuda }}
+          EOF
+          cat versions.txt
 
       - name: Update tag
         uses: richardsimko/update-tag@v1
@@ -169,6 +176,7 @@ jobs:
           commit: 'main'
           makeLatest: true
           allowUpdates: true
-          artifactErrorsFailBuild: false
-          artifacts: 'colmap-${{ matrix.colmap_version }}-${{ matrix.os }}.tar.gz,OpenSplat/build/opensplat'
-          body: 'Binaries are compatible with current Google Colab version'
+          removeArtifacts: true
+          artifactErrorsFailBuild: true
+          artifacts: 'colmap-ubuntu-24.04.tar.gz,opensplat,runtime-deps.txt,versions.txt'
+          body: 'Binaries are compatible with the current Google Colab GPU runtime (Ubuntu 24.04, CUDA ${{ matrix.cuda_version }}, PyTorch ${{ matrix.torch_version }}+${{ matrix.torch_cuda }}).'
