@@ -13,6 +13,9 @@ on:
 
   workflow_dispatch:  # Web UI trigger
 
+permissions:
+  contents: write  # needed to update the 'continuous' tag and release
+
 jobs:
   build:
     name: 'build (${{ matrix.os }}, cuda ${{ matrix.cuda_version }})'
