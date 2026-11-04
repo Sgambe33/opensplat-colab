@@ -9,7 +9,7 @@ on:
       - .github/workflows/ci.yml
 
   schedule:
-    - cron: '0 0 * * 3'
+    - cron: '0 0 1 * *'  # monthly, 1st at 00:00 UTC
 
   workflow_dispatch:  # Web UI trigger
 
@@ -70,6 +70,7 @@ jobs:
                                   libboost-system-dev \
                                   libeigen3-dev \
                                   libopenimageio-dev \
+                                  openimageio-tools \
                                   libmetis-dev \
                                   libgoogle-glog-dev \
                                   libgflags-dev \
