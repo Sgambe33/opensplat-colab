@@ -95,11 +95,14 @@ ok "opensplat installed"
 echo
 echo -e "📦 Installing runtime dependencies..."
 download "${RELEASE_URL}/runtime-deps.txt" runtime-deps.txt
-mapfile -t deps < <(grep -v '^\s*$' runtime-deps.txt)
+# Keep only valid Debian package names (skip anything malformed)
+mapfile -t deps < <(grep -E '^[a-z0-9][a-z0-9.+-]+$' runtime-deps.txt | sort -u)
 if (( ${#deps[@]} > 0 )); then
     apt-get update -qq > /dev/null 2>&1 || warning "apt-get update failed"
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${deps[@]}" > /dev/null 2>&1 \
-        || error_exit "Failed to install runtime dependencies: ${deps[*]}"
+    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${deps[@]}" > apt.log 2>&1; then
+        tail -n 20 apt.log
+        error_exit "Failed to install runtime dependencies"
+    fi
 fi
 ok "${#deps[@]} system packages installed"
 
