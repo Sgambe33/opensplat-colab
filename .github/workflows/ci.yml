@@ -147,8 +147,12 @@ jobs:
                 real=$(realpath "$lib")
                 dpkg -S "$lib" 2>/dev/null || dpkg -S "$real" 2>/dev/null || dpkg -S "${real#/usr}" 2>/dev/null || true
               done \
+            | grep -v '^diversion by' \
             | cut -d: -f1 \
-            | grep -vE '^(libc6|libgcc-s1|libstdc\+\+6|cuda-|libcu|libnv|libnpp)' \
+            | tr ',' '\n' \
+            | sed -E 's/^ +| +$//g; s/:.*$//' \
+            | grep -E '^[a-z0-9][a-z0-9.+-]+$' \
+            | grep -vE '^(libc6|libgcc-s1|libstdc\+\+6|cuda-.*|lib(cublas|cufft|cufile|curand|cusolver|cusparse|cudnn|nvjitlink|nvrtc|nvjpeg|npp|nccl).*)$' \
             | sort -u > runtime-deps.txt
           cat runtime-deps.txt
 
