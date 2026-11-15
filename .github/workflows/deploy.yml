@@ -8,6 +8,7 @@ on:
     paths:
       - .github/workflows/deploy.yml
       - install.sh
+      - install-gsplat.sh
 
   workflow_dispatch:  # manual trigger
 
@@ -24,7 +25,7 @@ jobs:
       - name: Prepare deploy folder
         run: |
           mkdir public
-          cp install.sh public/
+          cp install.sh install-gsplat.sh public/
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3
